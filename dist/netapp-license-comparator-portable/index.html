@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NetApp License 비교기</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workbench" aria-labelledby="page-title">
+        <div class="intro">
+          <p class="eyebrow">NetApp ONTAP log parser</p>
+          <h1 id="page-title">License 비교기</h1>
+          <p class="lede">
+            로그에서 <span>(system license show)</span> 출력만 찾아 시리얼, Owner, 라이선스 이름을 정리합니다.
+          </p>
+        </div>
+
+        <div class="parser-panel">
+          <div class="input-column">
+            <div class="input-toolbar">
+              <label for="logInput">CLI 로그</label>
+              <div class="toolbar-actions">
+                <label class="file-button" for="logFileInput" title="로그 파일 업로드">Upload</label>
+                <input id="logFileInput" class="visually-hidden" type="file" accept=".txt,.log,.out,.text" />
+                <button class="ghost-button" id="sampleButton" type="button" title="샘플 넣기">Sample</button>
+                <button class="ghost-button" id="clearButton" type="button" title="비우기">Clear</button>
+              </div>
+            </div>
+            <textarea
+              id="logInput"
+              spellcheck="false"
+              placeholder="dcissd01::> lics ense show&#10;  (system license show)&#10;&#10;Serial Number: 1-81-0000000000000452031000042&#10;Owner: none&#10;Installed License: Legacy Key&#10;Capacity: -&#10;Package           Type     Description           Expiration&#10;----------------- -------- --------------------- -------------------&#10;NFS               license  NFS License           -&#10;CIFS              license  CIFS License          -"
+            ></textarea>
+          </div>
+
+          <aside class="result-summary" aria-live="polite">
+            <div class="summary-item">
+              <span class="summary-value" id="serialCount">0</span>
+              <span class="summary-label">Serials</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value" id="ownerNoneCount">0</span>
+              <span class="summary-label">Owner none</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value" id="ownerAssignedCount">0</span>
+              <span class="summary-label">Owner assigned</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value" id="licenseCount">0</span>
+              <span class="summary-label">Licenses</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="results-band" aria-labelledby="results-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Parsed output</p>
+            <h2 id="results-title">시리얼별 License</h2>
+          </div>
+          <div class="section-actions">
+            <button class="ghost-button" id="exportExcelButton" type="button" disabled>Excel 추출</button>
+            <p id="parseStatus" class="status-pill">로그를 붙여넣으면 자동으로 분석됩니다.</p>
+          </div>
+        </div>
+
+        <div class="filter-panel" id="filterPanel" hidden>
+          <label class="filter-field filter-field-wide" for="searchInput">
+            <span>검색</span>
+            <input id="searchInput" type="search" placeholder="Serial, Owner, License 검색" />
+          </label>
+          <label class="filter-field" for="ownerStatusFilter">
+            <span>Owner 상태</span>
+            <select id="ownerStatusFilter">
+              <option value="">전체</option>
+              <option value="none">Owner none</option>
+              <option value="assigned">Owner assigned</option>
+            </select>
+          </label>
+          <label class="filter-field" for="ownerFilter">
+            <span>Owner</span>
+            <select id="ownerFilter">
+              <option value="">모든 Owner</option>
+            </select>
+          </label>
+          <label class="filter-field" for="serialFilter">
+            <span>Serial</span>
+            <select id="serialFilter">
+              <option value="">모든 Serial</option>
+            </select>
+          </label>
+          <label class="filter-field" for="licenseFilter">
+            <span>License</span>
+            <select id="licenseFilter">
+              <option value="">모든 License</option>
+            </select>
+          </label>
+          <button class="ghost-button reset-filter" id="resetFiltersButton" type="button">Reset</button>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+          <strong>아직 분석된 license show 출력이 없습니다.</strong>
+          <span>잘못 입력한 명령어가 있어도 바로 아래의 <code>(system license show)</code> 줄을 기준으로 파싱합니다.</span>
+        </div>
+
+        <div id="serialCards" class="serial-grid" hidden></div>
+      </section>
+
+      <section class="compare-band" aria-labelledby="compare-title" id="compareSection" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">License delta</p>
+            <h2 id="compare-title">장비 간 비교</h2>
+          </div>
+        </div>
+        <div class="compare-panel">
+          <label class="filter-field" for="baselineSelect">
+            <span>기준 장비</span>
+            <select id="baselineSelect"></select>
+          </label>
+          <label class="filter-field" for="targetSelect">
+            <span>대상 장비</span>
+            <select id="targetSelect"></select>
+          </label>
+          <button class="ghost-button compare-button" id="compareButton" type="button">비교하기</button>
+          <pre id="compareOutput" class="compare-output">&lt;대상 장비&gt;
+기준 장비와 대상 장비를 선택하고 비교하기를 누르세요.</pre>
+        </div>
+      </section>
+
+      <section class="matrix-band" aria-labelledby="matrix-title" id="matrixSection" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Comparison matrix</p>
+            <h2 id="matrix-title">License 보유 비교</h2>
+          </div>
+        </div>
+        <div class="matrix-wrap">
+          <table id="licenseMatrix">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
