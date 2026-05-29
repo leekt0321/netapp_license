@@ -500,86 +500,308 @@ function exportVisibleRecords() {
     return;
   }
 
-  const detailRows = records
+  const detailRows = [
+    ["Serial Number", "Raw Serial", "Owner", "Owner Group", "Licenses"].map((value) => ({ value, style: 1 })),
+    ...records.map((record) => [
+      record.serial,
+      record.rawSerial,
+      ownerState(record.owner).label,
+      ownerGroupLabels(record).join(", "),
+      record.licenses.join(", "),
+    ]),
+  ];
+
+  const diffLicenses = new Set(
+    licenses.filter((license) => {
+      const states = records.map((record) => record.licenses.includes(license));
+      return new Set(states).size > 1;
+    }),
+  );
+
+  const matrixRows = [
+    ["Serial Number", "Owner", "Owner Group", ...licenses].map((value) => ({ value, style: 1 })),
+    ...records.map((record) => [
+      record.serial,
+      ownerState(record.owner).label,
+      ownerGroupLabels(record).join(", "),
+      ...licenses.map((license) => ({
+        value: record.licenses.includes(license) ? "YES" : "",
+        style: diffLicenses.has(license) ? 2 : 0,
+      })),
+    ]),
+  ];
+
+  const workbook = createXlsxWorkbook([
+    { name: "Detail", rows: detailRows },
+    { name: "NetApp License Matrix", rows: matrixRows },
+  ]);
+
+  downloadBlob(workbook, `netapp-license-${dateStamp()}.xlsx`);
+}
+
+function createXlsxWorkbook(sheets) {
+  const files = [
+    { name: "[Content_Types].xml", data: textBytes(contentTypesXml(sheets.length)) },
+    { name: "_rels/.rels", data: textBytes(rootRelsXml()) },
+    { name: "xl/workbook.xml", data: textBytes(workbookXml(sheets)) },
+    { name: "xl/_rels/workbook.xml.rels", data: textBytes(workbookRelsXml(sheets.length)) },
+    { name: "xl/styles.xml", data: textBytes(stylesXml()) },
+    ...sheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      data: textBytes(worksheetXml(sheet.rows)),
+    })),
+  ];
+
+  return new Blob([zipFiles(files)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+function contentTypesXml(sheetCount) {
+  const sheetTypes = Array.from(
+    { length: sheetCount },
+    (_, index) =>
+      `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+  ).join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  ${sheetTypes}
+</Types>`;
+}
+
+function rootRelsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+}
+
+function workbookXml(sheets) {
+  const sheetNodes = sheets
     .map(
-      (record) => `
-        <tr>
-          <td>${excelCell(record.serial)}</td>
-          <td>${excelCell(record.rawSerial)}</td>
-          <td>${excelCell(ownerState(record.owner).label)}</td>
-          <td>${excelCell(ownerGroupLabels(record).join(", "))}</td>
-          <td>${excelCell(record.licenses.join(", "))}</td>
-        </tr>
-      `,
+      (sheet, index) =>
+        `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`,
     )
     .join("");
 
-  const matrixHeaders = licenses.map((license) => `<th>${excelCell(license)}</th>`).join("");
-  const matrixRows = records
-    .map((record) => {
-      const licenseCells = licenses
-        .map((license) => `<td>${record.licenses.includes(license) ? "YES" : ""}</td>`)
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${sheetNodes}</sheets>
+</workbook>`;
+}
+
+function workbookRelsXml(sheetCount) {
+  const sheetRels = Array.from(
+    { length: sheetCount },
+    (_, index) =>
+      `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`,
+  ).join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${sheetRels}
+  <Relationship Id="rId${sheetCount + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+}
+
+function stylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="Malgun Gothic"/></font>
+    <font><b/><sz val="11"/><name val="Malgun Gothic"/></font>
+  </fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="thin"><color rgb="FF999999"/></left><right style="thin"><color rgb="FF999999"/></right><top style="thin"><color rgb="FF999999"/></top><bottom style="thin"><color rgb="FF999999"/></bottom><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="3">
+    <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+    <xf numFmtId="49" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
+    <xf numFmtId="49" fontId="0" fillId="2" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"/>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+}
+
+function worksheetXml(rows) {
+  const rowNodes = rows
+    .map((row, rowIndex) => {
+      const cellNodes = row
+        .map((cell, columnIndex) => cellXml(cell, columnName(columnIndex) + (rowIndex + 1)))
         .join("");
-      return `
-        <tr>
-          <td>${excelCell(record.serial)}</td>
-          <td>${excelCell(ownerState(record.owner).label)}</td>
-          <td>${excelCell(ownerGroupLabels(record).join(", "))}</td>
-          ${licenseCells}
-        </tr>
-      `;
+      return `<row r="${rowIndex + 1}">${cellNodes}</row>`;
     })
     .join("");
 
-  const html = `
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          table { border-collapse: collapse; }
-          th, td { border: 1px solid #999; padding: 6px; mso-number-format:"\\@"; }
-          th { background: #e9e5da; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <h2>NetApp License Detail</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Serial Number</th>
-              <th>Raw Serial</th>
-              <th>Owner</th>
-              <th>Owner Group</th>
-              <th>Licenses</th>
-            </tr>
-          </thead>
-          <tbody>${detailRows}</tbody>
-        </table>
-        <br />
-        <h2>NetApp License Matrix</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Serial Number</th>
-              <th>Owner</th>
-              <th>Owner Group</th>
-              ${matrixHeaders}
-            </tr>
-          </thead>
-          <tbody>${matrixRows}</tbody>
-        </table>
-      </body>
-    </html>
-  `;
-
-  downloadBlob(
-    new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }),
-    `netapp-license-${dateStamp()}.xls`,
-  );
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${rowNodes}</sheetData>
+</worksheet>`;
 }
 
-function excelCell(value) {
-  return escapeHtml(value).replaceAll("\n", " ");
+function cellXml(cell, ref) {
+  const normalized = typeof cell === "object" && cell !== null ? cell : { value: cell, style: 0 };
+  const value = normalized.value ?? "";
+  const style = normalized.style ? ` s="${normalized.style}"` : "";
+
+  if (value === "") {
+    return `<c r="${ref}"${style}/>`;
+  }
+
+  return `<c r="${ref}" t="inlineStr"${style}><is><t>${xmlEscape(value)}</t></is></c>`;
+}
+
+function columnName(index) {
+  let dividend = index + 1;
+  let name = "";
+
+  while (dividend > 0) {
+    const modulo = (dividend - 1) % 26;
+    name = String.fromCharCode(65 + modulo) + name;
+    dividend = Math.floor((dividend - modulo) / 26);
+  }
+
+  return name;
+}
+
+function xmlEscape(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function textBytes(text) {
+  return new TextEncoder().encode(text);
+}
+
+function zipFiles(files) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach((file) => {
+    const nameBytes = textBytes(file.name);
+    const data = file.data;
+    const crc = crc32(data);
+    const { time, date } = dosDateTime(new Date());
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, time, true);
+    localView.setUint16(12, date, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, data.length, true);
+    localView.setUint32(22, data.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    localParts.push(localHeader, data);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, time, true);
+    centralView.setUint16(14, date, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, data.length, true);
+    centralView.setUint32(24, data.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    centralParts.push(centralHeader);
+    offset += localHeader.length + data.length;
+  });
+
+  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(4, 0, true);
+  endView.setUint16(6, 0, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+  endView.setUint16(20, 0, true);
+
+  return concatBytes([...localParts, ...centralParts, end]);
+}
+
+function concatBytes(parts) {
+  const totalLength = parts.reduce((total, part) => total + part.length, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+
+  parts.forEach((part) => {
+    output.set(part, offset);
+    offset += part.length;
+  });
+
+  return output;
+}
+
+function dosDateTime(dateObject) {
+  const year = Math.max(dateObject.getFullYear(), 1980);
+  return {
+    time: (dateObject.getHours() << 11) | (dateObject.getMinutes() << 5) | Math.floor(dateObject.getSeconds() / 2),
+    date: ((year - 1980) << 9) | ((dateObject.getMonth() + 1) << 5) | dateObject.getDate(),
+  };
+}
+
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+
+    table[index] = value >>> 0;
+  }
+
+  return table;
+})();
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+
+  bytes.forEach((byte) => {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function dateStamp() {

@@ -18,7 +18,8 @@ sh run.sh
 
 - CLI 로그를 직접 붙여넣거나 `Upload`로 `.txt`, `.log`, `.out` 파일을 불러옵니다.
 - 검색과 필터로 Owner, Serial, License를 좁혀봅니다.
-- `Excel 추출`을 누르면 현재 필터 결과 기준의 Detail/Matrix가 `.xls` 파일로 저장됩니다.
+- `Excel 추출`을 누르면 현재 필터 결과 기준의 Detail/Matrix가 `.xlsx` 파일로 저장됩니다.
+- Matrix 시트에서 장비별 보유 여부가 다른 License 셀은 빨간색으로 표시됩니다.
 - `장비 간 비교`에서 기준 장비와 대상 장비를 선택하고 `비교하기`를 누릅니다.
 
 비교 결과에서 `+License`는 대상 장비에 추가해야 하는 license, `-License`는 대상 장비에서 빠져야 하는 license입니다.
